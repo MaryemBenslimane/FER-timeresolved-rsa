@@ -1,16 +1,28 @@
-"""Pre-fine-tuning baseline model RDMs for ResNet18-AffectNet and VGGFace-AffectNet.
+"""RDMs for the facenet-pytorch FaceNet ("Complete VGGFace2") and its AffectNet fine-tune.
 
-Builds the SAME architecture as the trained model but with the *pre-fine-tuning*
-weights (ImageNet ResNet18 / VGGFace2 InceptionResnetV1) and a randomly initialized
-task head, then extracts activations with the identical pipeline as the trained
-extraction (same Stimuliloader, same layer_types_to_select, correlation-distance
-RDM per layer). Output: (n_layer, 15, 18, 18) matching the trained canonical RDM.
+Kept separate from extract_model_rdms.py because this model is facenet-pytorch's
+InceptionResnetV1 with last_linear/last_bn removed (1792 -> 3 head), which that script
+does not build, and because it uses the Stimuliloader normalization. Three weight sets,
+one architecture, so the RDMs share layer coordinates:
 
-Usage:
-  python extract_pretrained_baseline.py --model resnet18   # -> resnet18_affectnet_pretrained.npy
-  python extract_pretrained_baseline.py --model vggface    # -> vggface_affectnet_pretrained.npy
+  default        public VGGFace2 backbone + random 3-class head   ("Complete VGGFace2")
+  --finetuned    an AffectNet fine-tuned checkpoint               ("AffectNet FT")
+  --random       all weights Xavier-randomized (seed 42)
+
+`--model vggface` is FaceNet (not VGG16). `--model resnet18` (ImageNet ResNet18) is a
+legacy path; the paper's ResNet18 rows come from extract_model_rdms.py.
+Output: <out-name>.npy (n_layer, n_slides, 18, 18) + .predictions.csv + .layers.json.
+
+Usage (from models/, as in analysis/layer_matched/run_layer_matched.sh):
+  python image/extract_image_models_16frames.py --model vggface --layers weights \
+      --hdf5-dir ../stim_frames --n-slides 16 --out-name vggface_affectnet_16f_pretrained_weights
+  python image/extract_image_models_16frames.py --model vggface --layers weights \
+      --finetuned ../net_weights/best_inceptionresnetv1_fer.pt \
+      --hdf5-dir ../stim_frames --n-slides 16 --out-name vggface_affectnet_16f_finetuned_weights
 """
-import os, sys, argparse
+import os, sys, argparse, csv, json
+from collections import defaultdict
+import h5py
 import numpy as np
 import torch
 import torch.nn as nn
@@ -23,8 +35,9 @@ from facenet_pytorch import InceptionResnetV1
 from FaceNet import FaceNet, Block35, Mixed_6a, Mixed_7a, Block8, Block17
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-HDF5 = "/home/maryem/scratch/FER/hdf5"
-OUT_DIR = "/home/maryem/scratch/FER/analysis/model_rdms_canonical"
+ROOT = os.environ.get("FER_ROOT", ".")
+HDF5 = os.path.join(ROOT, "stim_frames")
+OUT_DIR = os.path.join(ROOT, "analysis/model_rdms_canonical")
 
 # Identical to models/extract_model_activations.py
 LAYER_TYPES = [mod.activation.PReLU, mod.batchnorm.BatchNorm1d, mod.conv.Conv2d,
@@ -125,39 +138,52 @@ def corr_distance_rdm(X):
     return rdm.astype(np.float32)
 
 
-def extract(name, finetuned=None, random=False, hdf5_dir=None, n_slides=15):
+def extract(name, finetuned=None, random=False, hdf5_dir=None, n_slides=15,
+            stim_names=None, batch_size=6, layers="all"):
     hdf5_dir = hdf5_dir or HDF5
     model = build_model(name, finetuned=finetuned, random=random)
     acts = {}
     handles = []
+    selected_types = (nn.Conv2d, nn.Linear) if layers == "weights" else tuple(LAYER_TYPES)
     for lname, layer in model.named_modules():
-        if type(layer) in LAYER_TYPES:
+        if isinstance(layer, selected_types):
             def mk(k):
                 def hook(_m, _i, o):
                     acts[k] = o.detach().cpu().numpy().reshape(o.size(0), -1)
                 return hook
             handles.append(layer.register_forward_hook(mk(lname)))
 
-    per_slide = []   # each (n_layer, 18, 18)
+    per_slide, predictions = [], []
     layer_order = None
     for s in range(1, n_slides + 1):
-        loader = Stimuliloader(18, f"{hdf5_dir}/Slide{s}.h5")
-        imgs = next(iter(loader)).to(DEVICE)
-        if imgs.shape[1] == 1:            # grayscale -> 3ch for these backbones
-            imgs = imgs.repeat(1, 3, 1, 1)
-        acts.clear()
-        with torch.no_grad():
-            model(imgs)
-        if layer_order is None:
-            layer_order = list(acts.keys())
-        rdms = np.stack([corr_distance_rdm(acts[k]) for k in layer_order], axis=0)  # (L,18,18)
+        with h5py.File(f"{hdf5_dir}/Slide{s}.h5", "r") as f:
+            n_stim = int(f["images"].shape[0])
+        loader = Stimuliloader(batch_size, f"{hdf5_dir}/Slide{s}.h5")
+        chunks, pred_chunks = defaultdict(list), []
+        for imgs in loader:
+            imgs = imgs.to(DEVICE)
+            if imgs.shape[1] == 1:
+                imgs = imgs.repeat(1, 3, 1, 1)
+            acts.clear()
+            with torch.no_grad():
+                output = model(imgs)
+            if layer_order is None:
+                layer_order = list(acts.keys())
+            for key in layer_order:
+                chunks[key].append(acts[key])
+            pred_chunks.append(output.argmax(1).cpu().numpy())
+        slide_acts = {key: np.concatenate(values, axis=0) for key, values in chunks.items()}
+        rdms = np.stack([corr_distance_rdm(slide_acts[k]) for k in layer_order], axis=0)
         per_slide.append(rdms)
+        pred = np.concatenate(pred_chunks)
+        names = stim_names or [f"stim_{i:02d}" for i in range(n_stim)]
+        predictions.extend((names[i], s, int(pred[i])) for i in range(n_stim))
         print(f"  slide {s}: {rdms.shape[0]} layers", flush=True)
 
     for h in handles:
         h.remove()
     stacked = np.stack(per_slide, axis=1)  # (L, 15, 18, 18)
-    return stacked
+    return stacked, predictions, layer_order
 
 
 def main():
@@ -168,15 +194,32 @@ def main():
     ap.add_argument("--hdf5-dir", default=None, help="stimulus slide directory (default: legacy 15-slide hdf5/)")
     ap.add_argument("--n-slides", type=int, default=15, help="number of Slide{i}.h5 files = model-time points")
     ap.add_argument("--out-name", default=None, help="output basename (without .npy); overrides the default naming")
+    ap.add_argument("--out-dir", default=OUT_DIR)
+    ap.add_argument("--manifest", default=None)
+    ap.add_argument("--batch-size", type=int, default=6)
+    ap.add_argument("--layers", choices=["all", "weights"], default="all")
     args = ap.parse_args()
     tag = {"resnet18": "resnet18_affectnet", "vggface": "vggface_affectnet"}[args.model]
     suffix = "random_matched" if args.random else ("finetuned_matched" if args.finetuned else "pretrained")
     base = args.out_name if args.out_name else f"{tag}_{suffix}"
-    out = os.path.join(OUT_DIR, f"{base}.npy")
-    rdm = extract(args.model, finetuned=args.finetuned, random=args.random,
-                  hdf5_dir=args.hdf5_dir, n_slides=args.n_slides)
+    manifest_path = args.manifest or os.path.join(args.hdf5_dir or HDF5, "stimulus_manifest.json")
+    manifest = json.loads(open(manifest_path).read()) if os.path.exists(manifest_path) else None
+    stim_names = [row["stimulus"] for row in manifest] if manifest else None
+    os.makedirs(args.out_dir, exist_ok=True)
+    out = os.path.join(args.out_dir, f"{base}.npy")
+    rdm, predictions, layer_order = extract(
+        args.model, finetuned=args.finetuned, random=args.random,
+        hdf5_dir=args.hdf5_dir, n_slides=args.n_slides, stim_names=stim_names,
+        batch_size=args.batch_size, layers=args.layers)
     print(f"[{args.model}] {suffix} RDM shape = {rdm.shape}")
     np.save(out, rdm)
+    with open(os.path.join(args.out_dir, f"{base}.predictions.csv"), "w", newline="") as f:
+        w = csv.writer(f); w.writerow(["stim", "frame", "pred_idx"]); w.writerows(predictions)
+    with open(os.path.join(args.out_dir, f"{base}.layers.json"), "w") as f:
+        json.dump({"shape": list(rdm.shape), "layer_order": layer_order,
+                   "model": args.model, "finetuned": args.finetuned,
+                   "random": args.random, "stimuli": stim_names,
+                   "stimulus_manifest": manifest_path, "layers": args.layers}, f, indent=2)
     print(f"[ok] saved -> {out}")
 
 

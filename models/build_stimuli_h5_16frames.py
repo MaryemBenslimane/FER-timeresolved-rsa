@@ -103,9 +103,9 @@ def sample_frames(path: Path, n_frames: int, size: int):
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--video-dir", type=Path,
-                    default=Path("/home/maryem/scratch/FER/Stims_Videos/Stims_Videos"))
+                    default=Path("./Stims_Videos/Stims_Videos"))
     ap.add_argument("--out-dir", type=Path,
-                    default=Path("/home/maryem/scratch/FER/hdf5_16frames"))
+                    default=Path("./hdf5_16frames"))
     ap.add_argument("--n-frames", type=int, default=16)
     ap.add_argument("--size", type=int, default=224)
     args = ap.parse_args()

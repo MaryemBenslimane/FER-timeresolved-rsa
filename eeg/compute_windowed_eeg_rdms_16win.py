@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """16 non-overlapping EEG RDM windows tiling the FULL epoch.
 
-Variant of `compute_windowed_eeg_rdms.py`. A fixed 62-sample window. 
+Each window is 62.5 samples.
 
 Output: <subject>_windowed_rdms.npy of shape (n_roi, 16, 18, 18), plus
 roi_order.npy and window_bounds.npy.
@@ -17,7 +17,7 @@ from typing import Dict
 import numpy as np
 
 EPS = 1e-12
-_ROOT = Path(os.environ.get('FER_ROOT', '/home/maryem/scratch/FER'))
+_ROOT = Path(os.environ.get('FER_ROOT', '.'))
 DEFAULT_INPUT_DIR = _ROOT / 'eeg_data' / 'Unmasked_avg'
 DEFAULT_OUTPUT_DIR = _ROOT / 'eeg_data' / 'Unmasked_avg_windowed_rdms_16win_full'
 

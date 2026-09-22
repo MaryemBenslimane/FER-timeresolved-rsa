@@ -1,10 +1,12 @@
 """Noise ceiling of the 16-window EEG RDMs (Nili et al., 2014), per ROI, per timepoint.
 
-    python analysis/noise_ceiling.py    -> noise_ceiling_16win.{csv,json,npz}
+    python analysis/noise_ceiling.py    -> noise_ceiling_16win_perwindow.{csv,json,npz}
 
 Upper bound: subject vs group mean including itself (overestimate; the ceiling).
 Lower bound: subject vs leave-one-out group mean (underestimate).
-Computed per ROI and within each emotion
+Computed per ROI and within each emotion, per window; the time-averaged summary
+the paper reports (incl. whole scalp) is written by build_control_rsa.py to
+noise_ceiling_16win.csv, which this script must not overwrite. Rows are
 comparable to the time-locked RSA in rsa_per_roi*.csv. The .npz stores the full
 per-timepoint bounds ("<emotion>|<roi>|{upper,lower}") for the overlay figure.
 """
@@ -40,14 +42,14 @@ def main():
             print(f"  {roi:<12s} upper={np.nanmean(up):.4f} "
                   f"({np.nanmin(up):.3f}-{np.nanmax(up):.3f})  lower={np.nanmean(lo):.4f}")
 
-    (out / "noise_ceiling_16win.json").write_text(json.dumps(rows, indent=2))
+    (out / "noise_ceiling_16win_perwindow.json").write_text(json.dumps(rows, indent=2))
     cols = ["emotion", "roi", "n_pairs", "upper_mean", "upper_min", "upper_max", "lower_mean"]
-    with (out / "noise_ceiling_16win.csv").open("w", newline="") as f:
+    with (out / "noise_ceiling_16win_perwindow.csv").open("w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=cols); w.writeheader()
         for r in rows:
             w.writerow({k: (round(r[k], 4) if isinstance(r[k], float) else r[k]) for k in cols})
-    np.savez(out / "noise_ceiling_16win.npz", centers=centers, **store)
-    print(f"\n[ok] -> {out / 'noise_ceiling_16win.csv'}  (+ .npz for the overlay figure)")
+    np.savez(out / "noise_ceiling_16win_perwindow.npz", centers=centers, **store)
+    print(f"\n[ok] -> {out / 'noise_ceiling_16win_perwindow.csv'}  (+ .npz for the overlay figure)")
 
 
 if __name__ == "__main__":

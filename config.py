@@ -2,7 +2,7 @@
 
 All data locations derive from the FER_ROOT environment variable:
 
-    export FER_ROOT=/path/to/data          # default: /home/maryem/scratch/FER
+    export FER_ROOT=/path/to/data          # default: repository root
 
 The canonical 18-stimulus order is EMOTION-MAJOR with numeric actors, matching the
 EEG condition order:
@@ -15,7 +15,7 @@ from pathlib import Path
 
 import numpy as np
 
-FER_ROOT = Path(os.environ.get("FER_ROOT", "/home/maryem/scratch/FER"))
+FER_ROOT = Path(os.environ.get("FER_ROOT", "."))
 
 # --- data ------------------------------------------------------------------
 # 16 non-overlapping windows (62-sample, last 70) covering the full 1 s epoch,

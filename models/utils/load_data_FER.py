@@ -126,7 +126,7 @@ def dataloader(batch_size: int, dataset: str, n_input_channels: int, analysis_ty
     
     mean = [0.485, 0.456, 0.406]
     std = [0.229, 0.224, 0.225]
-    #if dataset == "/home/maryem/scratch/face_img_dataset/FER-2013/FER-2013-unmasked/hdf5" :
+    #if dataset == ".//face_img_dataset/FER-2013/FER-2013-unmasked/hdf5" :
     # transformations_train = v2.Compose([
     #         transforms.ToTensor(),
     #         transforms.Grayscale(num_output_channels=1),
