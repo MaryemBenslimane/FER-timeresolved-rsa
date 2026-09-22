@@ -24,6 +24,10 @@ class Options(object):
         parser.add_argument('--fold', default='1', type=str)
         parser.add_argument('--seed', default='42', type=int)
         parser.add_argument('--data_root', default='/dockerdata/', type=str)
+        parser.add_argument('--output_path', default=None, type=str)
+        parser.add_argument('--r3d_weights', default=None, type=str,
+                            help='local R3D-18 Kinetics-400 state dict')
+        parser.add_argument('--max_hours', default=None, type=float)
 
         # numeric settings
         parser.add_argument('--workers', default=16, type=int,
@@ -32,7 +36,7 @@ class Options(object):
                             metavar='N', help='number of total epochs to run')
         parser.add_argument('-b', '--batch_size',
                             default=256, type=int, metavar='N')
-        parser.add_argument('--num_classes', default=7, type=int)
+        parser.add_argument('--num_classes', default=3, type=int)
 
         # model settings
         parser.add_argument('--num_frames', default=16,
@@ -88,16 +92,16 @@ class Options(object):
         now = datetime.datetime.now()
         time_str = now.strftime("-[%m-%d]-[%H:%M]")
         args.name = args.dataset + time_str
-        args.output_path = "outputs/" + args.name + "/"
-        if not os.path.exists(args.output_path):
-            os.mkdir(args.output_path)
+        if args.output_path is None:
+            args.output_path = os.path.join("outputs", args.name)
+        os.makedirs(args.output_path, exist_ok=True)
 
         # init the csv file path of different datasets
         if args.dataset == "DFEW":
             args.train_dataset = os.path.join(
-                args.root, "EmoLabel_DataSplit/train(single-labeled)/set_X.csv")
+                args.data_root, "EmoLabel_DataSplit/train(single-labeled)/set_X.csv")
             args.test_dataset = os.path.join(
-                args.root, "EmoLabel_DataSplit/test(single-labeled)/set_X.csv")
+                args.data_root, "EmoLabel_DataSplit/test(single-labeled)/set_X.csv")
         elif args.dataset == "FERV39K":
             args.train_dataset = os.path.join(
                 args.root, "FERV39K/FERV39k/4_setups/All_scenes/train_All.csv")

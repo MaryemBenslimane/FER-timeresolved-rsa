@@ -23,7 +23,11 @@ class M3DFEL(nn.Module):
         self.instance_length = self.args.instance_length
 
         # backbone networks
-        model = r3d_18(weights=R3D_18_Weights.DEFAULT)
+        model = r3d_18(weights=None)
+        if not self.args.r3d_weights:
+            raise ValueError("--r3d_weights is required (local Kinetics-400 R3D-18 weights)")
+        state = torch.load(self.args.r3d_weights, map_location="cpu", weights_only=True)
+        model.load_state_dict(state)
         self.features = nn.Sequential(
             *list(model.children())[:-1])  # after avgpool 512x1
         self.lstm = nn.LSTM(input_size=512, hidden_size=512,
@@ -78,7 +82,7 @@ class M3DFEL(nn.Module):
                       t1=self.bag_size, t2=self.instance_length)
         # [batch*bag_size, 3, il, 112, 112]
 
-        x = self.features(x).squeeze()
+        x = self.features(x).flatten(1)
         # [batch*bag_size, 512]
         x = rearrange(x, '(b t) c -> b t c', t=self.bag_size)
 
@@ -86,7 +90,7 @@ class M3DFEL(nn.Module):
         x = self.MIL(x)
         # [batch, bag_size, 1024]
 
-        x = self.pwconv(x).squeeze()
+        x = self.pwconv(x).squeeze(1)
         # [batch, 1024]
         out = self.fc(x)
         # [batch, 7]

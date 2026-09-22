@@ -3,7 +3,7 @@
 
 M3DFEL = r3d_18 backbone (Kinetics-400) -> per-instance 512-d -> BiLSTM ->
 multi-head self-attention + DMIN -> pwconv -> fc(7). See
-models/third_party/M3DFEL (github.com/Tencent/TFace/tree/master/attribute/M3DFEL).
+M3DFEL/ (github.com/Tencent/TFace/tree/master/attribute/M3DFEL, with our 3-class DFEW changes).
 
 IMPORTANT - what "pretrained" can mean here
     Tencent publishes NO DFEW-trained checkpoint (the repo has zero releases and
@@ -39,7 +39,8 @@ import torch
 import torch.nn as nn
 
 ROOT = Path(os.environ.get("FER_ROOT", "."))
-M3DFEL_DIR = ROOT / "TFace/attribute/M3DFEL"
+# M3DFEL code (bundled in M3DFEL/) and its pretrained/r3d_18-b3b3357e.pth backbone weights.
+M3DFEL_DIR = Path(os.environ.get("M3DFEL_DIR", Path(__file__).resolve().parents[1] / "M3DFEL"))
 sys.path.insert(0, str(M3DFEL_DIR))
 
 ACTORS = [1, 2, 4, 7, 8, 11]

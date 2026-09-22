@@ -27,7 +27,6 @@ models/
   m3dfel_extract_rdms.py  M3DFEL video model, pretrained and random init
   extract_qwen_rdms.py    Qwen3-VL video model -> per-(layer, frame) RDMs
   vlm/                    Qwen video-mode extraction, activations -> RDMs, SLURM drivers (run_qwen3vl*.sh)
-  video_cnn/              Time-wise activations and RDMs for 2D/3D video CNNs
   build_emotion_rdms.py, build_emotion_rdms_54.py
                           Split model RDMs into per-emotion RDMs
   train_vggface2_rgb.py, check_vggface2_layout.py
@@ -37,7 +36,8 @@ vggface_train/          VGGFace2 identity training of ResNet18/50 and FaceNet (t
                         and the training-set-size subset indexes
 affectnet_3class_train/ train_affectnet.py: 3-class AffectNet (fear/happy/neutral) fine-tuning
                         of FaceNet, ResNet18, ResNet50 and VGG-Face
-M3DFEL/                 Upstream M3DFEL code (CVPR 2023, Tencent TFace), see its README
+M3DFEL/                 M3DFEL code (CVPR 2023, Tencent TFace) with our changes for 3-class DFEW
+                        (happy/fear/neutral) training and local R3D-18 weights; see its README
 fer_tr/                 Shared time-locked RSA code (core.py, timelocked_rsa_per_roi.py)
 analysis/
   rsa_full_grid.py        18-stimulus RSA grid: subject x ROI x layer x emotion x EEG window
@@ -84,7 +84,7 @@ Place these at the repository root (or under `FER_ROOT`). None of them is distri
 | `eeg_data/Unmasked_avg_wholescalp_16win/` | 18-stimulus whole-scalp EEG RDMs, `(16, 18, 18)` |
 | `eeg_rdms_complete/` | 54-stimulus per-ROI (`perroi/`) and whole-scalp (`wholescalp/`) EEG RDMs |
 | `net_weights/` | Pretrained and fine-tuned checkpoints |
-| `TFace/attribute/M3DFEL/` | M3DFEL code and checkpoints, where `m3dfel_extract_rdms.py` looks for them (the code is in `M3DFEL/`) |
+| `M3DFEL/pretrained/r3d_18-b3b3357e.pth` | Kinetics-400 R3D-18 weights (torchvision) for the M3DFEL backbone; set `M3DFEL_DIR` to use another M3DFEL copy |
 
 Public datasets used for training: VGGFace2, AffectNet, DFEW, and ImageNet / Kinetics
 pretrained weights through `torchvision`, `timm`, `facenet-pytorch` and `transformers`.

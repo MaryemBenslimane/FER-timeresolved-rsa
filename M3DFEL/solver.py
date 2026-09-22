@@ -23,9 +23,10 @@ class Solver(object):
 
         self.args = args
         self.log_path = os.path.join(self.args.output_path, "log.txt")
-        self.emotions = ["hap", "sad", "neu", "ang", "sur", "dis", "fea"]
+        self.emotions = ["happy", "fear", "neutral"]
         self.best_wa = 0
         self.best_ua = 0
+        self.started = time.time()
 
         # init cuda
         if len(self.args.gpu_ids) > 0:
@@ -61,6 +62,9 @@ class Solver(object):
                                            weight_decay=self.args.weight_decay)
         self.scheduler = build_scheduler(
             self.args, self.optimizer, len(self.train_dataloader))
+        self.amp_dtype = torch.bfloat16 if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else torch.float16
+        self.scaler = torch.amp.GradScaler(
+            "cuda", enabled=torch.cuda.is_available() and self.amp_dtype == torch.float16)
 
         # resume
         if args.resume:
@@ -72,6 +76,8 @@ class Solver(object):
             self.best_ua = checkpoint['best_ua']
             self.model.load_state_dict(checkpoint['state_dict'])
             self.optimizer.load_state_dict(checkpoint['optimizer'])
+            if 'scaler' in checkpoint:
+                self.scaler.load_state_dict(checkpoint['scaler'])
 
     def run(self):
 
@@ -89,8 +95,7 @@ class Solver(object):
             val_acc, val_loss = self.validate(epoch)
 
             # remember best acc and save checkpoint
-            is_best = (val_acc[0] > self.best_wa) or (
-                val_acc[1] > self.best_ua)
+            is_best = val_acc[1] > self.best_ua
             self.best_wa = max(val_acc[0], self.best_wa)
             self.best_ua = max(val_acc[1], self.best_ua)
             self.save({'epoch': epoch,
@@ -98,6 +103,7 @@ class Solver(object):
                        'best_wa': self.best_wa,
                        'best_ua': self.best_ua,
                        'optimizer': self.optimizer.state_dict(),
+                       'scaler': self.scaler.state_dict(),
                        'args': self.args}, is_best)
 
             # print and save log
@@ -128,6 +134,10 @@ class Solver(object):
                 figure.savefig(fig_path)
                 plt.close()
 
+            if self.args.max_hours and (time.time() - self.started) / 3600 >= self.args.max_hours:
+                print("stopping cleanly at max-hours")
+                break
+
         return self.best_ua, self.best_ua
 
     def train(self, epoch):
@@ -146,9 +156,10 @@ class Solver(object):
             images = images.to(self.device)
             target = target.to(self.device)
 
-            output = self.model(images)
-
-            loss = self.criterion(output, target)
+            with torch.autocast(self.device.type, dtype=self.amp_dtype,
+                                enabled=self.device.type == 'cuda'):
+                output = self.model(images)
+                loss = self.criterion(output, target)
 
             pred = torch.argmax(output, 1).cpu().detach().numpy()
             target = target.cpu().numpy()
@@ -158,8 +169,9 @@ class Solver(object):
             all_loss += loss.item()
 
             self.optimizer.zero_grad()
-            loss.backward()
-            self.optimizer.step()
+            self.scaler.scale(loss).backward()
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
             self.scheduler.step_update(epoch * len(self.train_dataloader) + i)
 
         # WAR
@@ -189,9 +201,10 @@ class Solver(object):
             target = target.to(self.device)
 
             with torch.no_grad():
-                output = self.model(images)
-
-            loss = self.criterion(output, target)
+                with torch.autocast(self.device.type, dtype=self.amp_dtype,
+                                    enabled=self.device.type == 'cuda'):
+                    output = self.model(images)
+                    loss = self.criterion(output, target)
 
             pred = torch.argmax(output, 1).cpu().detach().numpy()
             target = target.cpu().numpy()
@@ -222,6 +235,11 @@ class Solver(object):
         checkpoint_path = os.path.join(
             self.args.output_path, "model_latest.pth")
         torch.save(state, checkpoint_path)
+        torch.save(state['state_dict'],
+                   os.path.join(self.args.output_path, "last_weights.pt"))
+        if is_best:
+            torch.save(state['state_dict'],
+                       os.path.join(self.args.output_path, "best_weights.pt"))
 
     def get_acc_msg(self, epoch, train_acc, train_loss, val_acc, val_loss, best_wa, best_ua, epoch_time):
         msg = """\nEpoch {} Train\t: WA:{:.2%}, \tUA:{:.2%}, \tloss:{:.4f}

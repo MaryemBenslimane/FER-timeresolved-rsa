@@ -12,6 +12,9 @@ from .video_transform import *
 
 
 class DFEWDataset(data.Dataset):
+    # Original DFEW labels: 1=happy, 3=neutral, 7=fear.
+    # Remap to the requested contiguous order: happy, fear, neutral.
+    LABEL_MAP = {1: 0, 7: 1, 3: 2}
     def __init__(self, args, mode):
         """Dataset for DFEW
 
@@ -41,7 +44,7 @@ class DFEWDataset(data.Dataset):
         """
         full_data = []
 
-        npy_path = self.path.replace('csv', 'npy')
+        npy_path = self.path.replace('.csv', '.happy_fear_neutral.npy')
         print("loading data")
 
         # save/load the data to/from npy file
@@ -53,7 +56,10 @@ class DFEWDataset(data.Dataset):
                 next(reader)
                 for row in reader:
                     path = row[0]
-                    emotion = int(row[1]) - 1
+                    original_emotion = int(row[1])
+                    if original_emotion not in self.LABEL_MAP:
+                        continue
+                    emotion = self.LABEL_MAP[original_emotion]
 
                     # modify the path
                     while len(path) < 5:
@@ -61,13 +67,14 @@ class DFEWDataset(data.Dataset):
 
                     # combine the path
                     path = os.path.join(
-                        self.args.root, "Clip/clip_224x224/", path)
-                    full_num_frames = len(os.listdir(path))
-
+                        self.args.data_root, "Clip/clip_224x224/", path)
                     # get the paths of the frames of a video and sort
                     full_video_frames_paths = glob.glob(
                         os.path.join(path, '*.jpg'))
                     full_video_frames_paths.sort()
+                    full_num_frames = len(full_video_frames_paths)
+                    if full_num_frames == 0:
+                        raise FileNotFoundError(f"no RGB frames found for clip {path}")
 
                     full_data.append({"path": full_video_frames_paths,
                                       "emotion": emotion,
